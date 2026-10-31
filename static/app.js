@@ -98,6 +98,45 @@ const app = {
   firstRoute: true,
 };
 
+/* ============================== preferences ============================== */
+
+const PREF_DEFAULTS = { theme: 'system', motion: 'system', orderType: 'market', demoBanner: true };
+const prefs = (() => {
+  try { return { ...PREF_DEFAULTS, ...JSON.parse(localStorage.getItem('pt-prefs') || '{}') }; } catch { return { ...PREF_DEFAULTS }; }
+})();
+
+function setPref(key, value) {
+  prefs[key] = value;
+  try { localStorage.setItem('pt-prefs', JSON.stringify(prefs)); } catch { /* private mode: applies for this visit only */ }
+  applyPrefs();
+}
+
+function applyPrefs() {
+  const root = document.documentElement;
+  if (prefs.theme === 'light' || prefs.theme === 'dark') root.dataset.theme = prefs.theme; else delete root.dataset.theme;
+  if (prefs.motion === 'reduced') root.dataset.motion = 'reduced'; else delete root.dataset.motion;
+  updateBanner();
+}
+
+function updateBanner() {
+  $('#mode-banner').hidden = !(app.status?.mode === 'demo' && prefs.demoBanner);
+}
+
+// Brief green/red flash when a displayed price changes between refreshes.
+const lastTicks = new Map();
+function flashTicks(container) {
+  $$('[data-tick]', container).forEach((el) => {
+    const [key, raw] = el.dataset.tick.split('|');
+    const value = Number(raw);
+    const prev = lastTicks.get(key);
+    lastTicks.set(key, value);
+    if (prev === undefined || prev === value || !motionOk()) return;
+    el.classList.remove('tick-up', 'tick-down');
+    void el.offsetWidth;
+    el.classList.add(value > prev ? 'tick-up' : 'tick-down');
+  });
+}
+
 async function loadStatus() {
   try {
     app.status = await api('/api/status');
@@ -109,12 +148,15 @@ async function loadStatus() {
   const s = app.status;
   const banner = $('#mode-banner');
   if (s.mode === 'demo') {
-    banner.innerHTML = '<strong>Demo mode:</strong> prices are simulated and are not real market data. '
-      + `Demo mode covers ${s.demo_symbols.length} popular tickers. Add <code>TWELVE_DATA_API_KEY</code> to <code>.env</code> and restart for real quotes.`;
-    banner.hidden = false;
-  } else {
-    banner.hidden = true;
+    banner.innerHTML = `<span><strong>Demo mode</strong> Prices are simulated, not real market data.
+      <a href="#/settings" data-jump-to="data">How to use real prices</a></span>
+      <button type="button" class="icon-btn" data-dismiss-banner aria-label="Hide demo-mode banner">✕</button>`;
+    $('[data-dismiss-banner]', banner).addEventListener('click', () => {
+      setPref('demoBanner', false);
+      toast('Banner hidden. The Demo badge in the header stays, and you can bring the banner back in Settings.');
+    });
   }
+  updateBanner();
   $('#footer-provider').textContent = s.mode === 'demo'
     ? 'Market data: simulated demo data.'
     : `Market data: ${s.provider} (${s.label === 'live' ? 'live' : 'delayed'}), refreshed about every ${s.quote_refresh_seconds} seconds.`;
@@ -533,7 +575,7 @@ function openOrderDialog(order, onDone) {
 }
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const motionOk = () => !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const motionOk = () => prefs.motion !== 'reduced' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function showTradeTicket(result) {
   const t = result.transaction;
@@ -612,11 +654,17 @@ function txnVerb(t) { return t.side === 'buy' ? 'Bought' : 'Sold'; }
 function DashboardView(root) {
   root.innerHTML = `
     <div id="away"></div>
+    <div class="hero-grid">
     <section class="hero" aria-labelledby="hero-label">
       <h1 class="eyebrow" id="hero-label">Simulated portfolio value</h1>
       <p class="hero-value" id="hero-value"><span class="skeleton lg" aria-hidden="true"></span></p>
       <p class="hero-sub" id="hero-sub">&nbsp;</p>
     </section>
+    <section class="card hero-side" aria-labelledby="alloc-h">
+      <div class="card-head"><h2 id="alloc-h">Allocation</h2><span class="meta" id="alloc-meta"></span></div>
+      <div id="allocation">${skeletonRows(3)}</div>
+    </section>
+    </div>
     <section aria-label="Account summary"><div class="stats" id="stats">
       ${['Cash', 'Invested', 'Total profit / loss', "Today's change"].map((l) => `
         <div class="card stat"><div class="stat-label">${l}</div><span class="skeleton lg"></span></div>`).join('')}
@@ -708,6 +756,7 @@ function DashboardView(root) {
 
   function renderAccount(a) {
     renderAway(a.away);
+    renderAllocation(a);
     const [whole, cents] = money(a.portfolio_value_cents).split('.');
     $('#hero-value').innerHTML = `${esc(whole)}<span class="cents">.${esc(cents)}</span>`;
     $('#hero-sub').innerHTML = `${changeHtml(a.day_change_cents, a.day_change_percent, { cents: true })} today. `
@@ -786,6 +835,25 @@ function DashboardView(root) {
     bindCancel(ordersEl, () => refresh());
   }
 
+  function renderAllocation(a) {
+    const total = a.portfolio_value_cents || 1;
+    const top = a.holdings.slice(0, 5).map((h, i) => ({ label: h.symbol, value: h.market_value_cents, cls: `seg-${i}`, href: `#/stock/${encodeURIComponent(h.symbol)}` }));
+    const rest = a.holdings.slice(5).reduce((sum, h) => sum + h.market_value_cents, 0);
+    if (rest) top.push({ label: 'Other', value: rest, cls: 'seg-other' });
+    const segs = [...top, { label: 'Cash', value: a.cash_cents, cls: 'seg-cash' }];
+    $('#alloc-meta').textContent = `${a.holdings.length} position${a.holdings.length === 1 ? '' : 's'} + cash`;
+    $('#allocation').innerHTML = `
+      <div class="alloc-stack" aria-hidden="true">${segs.map((s) => `<span class="${s.cls}" data-width="${(s.value / total * 100).toFixed(2)}"></span>`).join('')}</div>
+      <ul class="alloc-legend">${segs.map((s) => `
+        <li><i class="${s.cls}" aria-hidden="true"></i>
+          ${s.href ? `<a href="${s.href}">${esc(s.label)}</a>` : `<span>${esc(s.label)}</span>`}
+          <span class="pct">${(s.value / total * 100).toFixed(1)}%</span>
+          <span class="muted">${money(s.value)}</span></li>`).join('')}
+      </ul>
+      ${a.holdings.length ? '' : '<p class="help alloc-hint">All cash for now. Buy a stock and it shows up here.</p>'}`;
+    applyWidths($('#allocation'));
+  }
+
   function renderWatchlist(items) {
     const el = $('#watchlist');
     if (!items.length) {
@@ -796,11 +864,12 @@ function DashboardView(root) {
       const q = i.quote;
       return `<li class="list-item">
         <div><a class="title" href="#/stock/${encodeURIComponent(i.symbol)}">${esc(i.symbol)}</a><span class="sub">${esc(q?.name || i.name || '')}</span></div>
-        <span class="right">${q ? `${price(q.price)}<small class="${tone(q.change)}"><span aria-hidden="true">${arrow(q.change)}</span> ${pct(q.change_percent)}</small>`
+        <span class="right">${q ? `<span data-tick="w-${esc(i.symbol)}|${q.price}">${price(q.price)}</span><small class="${tone(q.change)}"><span aria-hidden="true">${arrow(q.change)}</span> ${pct(q.change_percent)}</small>`
           : `<small class="muted" title="${esc(i.error || '')}">Price unavailable</small>`}</span>
         <button type="button" class="icon-btn" data-unwatch="${esc(i.symbol)}" aria-label="Remove ${esc(i.symbol)} from watchlist">✕</button>
       </li>`;
     }).join('')}</ul>`;
+    flashTicks(el);
     $$('[data-unwatch]', el).forEach((btn) => btn.addEventListener('click', async () => {
       btn.disabled = true;
       try {
@@ -950,16 +1019,25 @@ function StockView(root, { symbol }) {
       bindRetry(root, () => refresh());
       return;
     }
+    const first = !loaded;
     if (!loaded) { layout(); loaded = true; loadChart(); }
     else if (silent && range === '1D') loadChart(true);
     render();
+    if (first && prefs.orderType === 'limit') {
+      $('#order-type', root).value = 'limit';
+      $('#limit', root).value = data.quote.price.toFixed(2);
+      updateForm();
+    }
   }
 
   function render() {
     const { quote: q, position, open_orders: orders, transactions } = data;
     document.title = `${symbol} ${price(q.price)} · PaperTrade`;
     $('#s-name', root).textContent = q.name;
-    $('#s-price', root).textContent = price(q.price);
+    const px = $('#s-price', root);
+    px.textContent = price(q.price);
+    px.dataset.tick = `s-${symbol}|${q.price}`;
+    flashTicks(px.parentElement);
     $('#s-change', root).innerHTML = `${changeHtml(q.change, q.change_percent)} <span class="muted">today</span>`;
     const asOf = q.as_of ? `Price as of ${fmtDateTime(q.as_of)}` : '';
     $('#s-meta', root).innerHTML = [
@@ -1324,49 +1402,125 @@ function HistoryView(root) {
 
 /* ============================== settings ============================== */
 
+const settingRow = (title, desc, control, id = '') => `
+  <div class="setting-row"${id ? ` id="${id}"` : ''}>
+    <div class="setting-text"><h3>${title}</h3><p>${desc}</p></div>
+    <div class="setting-control">${control}</div>
+  </div>`;
+
+const choiceGroup = (key, label, options) => `
+  <div class="choice" role="radiogroup" aria-label="${esc(label)}">
+    ${options.map(([value, text]) => `
+      <input type="radio" name="pref-${key}" id="pref-${key}-${value}" value="${value}" ${prefs[key] === value ? 'checked' : ''}>
+      <label for="pref-${key}-${value}">${text}</label>`).join('')}
+  </div>`;
+
+const switchControl = (key, label) => `
+  <label class="switch">
+    <input type="checkbox" role="switch" name="pref-${key}" ${prefs[key] ? 'checked' : ''}>
+    <span class="switch-track" aria-hidden="true"></span>
+    <span class="visually-hidden">${esc(label)}</span>
+  </label>`;
+
 function SettingsView(root) {
+  const sections = [['account', 'Account'], ['preferences', 'Preferences'], ['data', 'Market data'], ['session', 'Session'], ['danger', 'Danger zone']];
   root.innerHTML = `
     <div class="page-head">
-      <div><h1 class="page-title">Settings</h1><p class="page-sub">Account reset and market data details.</p></div>
+      <div><h1 class="page-title">Settings</h1><p class="page-sub">Your simulated account, display preferences and data source.</p></div>
     </div>
-    <div class="settings-grid">
-      <section class="card" aria-labelledby="reset-h">
-        <div class="card-head"><h2 id="reset-h">Reset account</h2></div>
-        <div class="card-body">
-          <p class="prose">Start over with a fresh simulated balance. This permanently clears your holdings, open orders and
-            trade history. Your watchlist is kept.</p>
-          <form id="reset-form" novalidate>
-            <div class="field">
-              <label for="balance">Starting balance</label>
+    <div class="settings-layout">
+      <nav class="settings-nav" aria-label="Settings sections">
+        ${sections.map(([id, label]) => `<a href="#/settings" data-section="${id}"${id === 'session' ? ' hidden' : ''}>${label}</a>`).join('')}
+      </nav>
+      <div class="settings-sections">
+        <section class="card settings-card" id="sec-account" aria-labelledby="account-h">
+          <div class="card-head"><h2 id="account-h">Account</h2></div>
+          <div id="account-rows">${skeletonRows(4)}</div>
+        </section>
+
+        <section class="card settings-card" id="sec-preferences" aria-labelledby="prefs-h">
+          <div class="card-head"><h2 id="prefs-h">Preferences</h2><span class="meta" id="prefs-saved" aria-live="polite">Saved on this device</span></div>
+          ${settingRow('Theme', 'Follow your device, or always use light or dark.', choiceGroup('theme', 'Theme', [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']]))}
+          ${settingRow('Default order type', 'What the trade form starts with on a stock page.', choiceGroup('orderType', 'Default order type', [['market', 'Market'], ['limit', 'Limit']]))}
+          ${settingRow('Motion', 'Trade animations, ticket stamps and price flashes. Reduced also applies if your device asks for less motion.', choiceGroup('motion', 'Motion', [['system', 'Full'], ['reduced', 'Reduced']]))}
+          ${settingRow('Demo-mode banner', 'Show the reminder at the top of each page while prices are simulated.', switchControl('demoBanner', 'Show demo-mode banner'), 'row-banner')}
+        </section>
+
+        <section class="card settings-card" id="sec-data" aria-labelledby="data-h">
+          <div class="card-head"><h2 id="data-h">Market data</h2><span id="data-badge"></span></div>
+          <div id="data-rows">${skeletonRows(3)}</div>
+        </section>
+
+        <section class="card settings-card" id="sec-session" aria-labelledby="session-h" hidden>
+          <div class="card-head"><h2 id="session-h">Session</h2></div>
+          ${settingRow('Sign out', 'You stay signed in on this device for 30 days. Changing APP_PASSWORD on the server signs out every device.',
+            '<button type="button" class="btn" id="signout">Sign out</button>')}
+        </section>
+
+        <section class="card settings-card danger-zone" id="sec-danger" aria-labelledby="danger-h">
+          <div class="card-head"><h2 id="danger-h">Danger zone</h2></div>
+          <form id="reset-form" class="setting-row setting-row-wide" novalidate>
+            <div class="setting-text">
+              <h3>Reset account</h3>
+              <p>Permanently deletes your holdings, open orders and trade history, and sets your cash to a new starting balance. Your watchlist and preferences are kept.</p>
+            </div>
+            <div class="reset-controls">
+              <label for="balance" class="field-label">New starting balance</label>
               <div class="input-prefix"><span aria-hidden="true">$</span>
                 <input id="balance" class="input" type="number" inputmode="decimal" min="1000" max="10000000" step="0.01" aria-describedby="balance-help balance-error">
               </div>
-              <p class="help" id="balance-help">Between $1,000 and $10,000,000.</p>
-              <p class="field-error" id="balance-error" hidden></p>
               <div class="presets" role="group" aria-label="Preset balances">
                 ${[10000, 25000, 100000, 1000000].map((v) => `<button type="button" class="btn sm" data-preset="${v}">${usd.format(v).replace('.00', '')}</button>`).join('')}
               </div>
+              <p class="help" id="balance-help">Between $1,000 and $10,000,000.</p>
+              <p class="field-error" id="balance-error" hidden></p>
+              <button type="submit" class="btn danger">Reset account…</button>
             </div>
-            <button type="submit" class="btn danger">Reset account…</button>
           </form>
-          <p class="help" id="account-meta"></p>
-        </div>
-      </section>
-      <section class="card" aria-labelledby="signout-h" id="signout-card" hidden>
-        <div class="card-head"><h2 id="signout-h">Session</h2></div>
-        <div class="card-body">
-          <p class="prose">You stay signed in on this device for 30 days. Changing <code>APP_PASSWORD</code> on the server signs out every device.</p>
-          <button type="button" class="btn" id="signout">Sign out</button>
-        </div>
-      </section>
-      <section class="card" aria-labelledby="data-h">
-        <div class="card-head"><h2 id="data-h">Market data</h2></div>
-        <div class="card-body prose" id="data-info">${skeletonRows(4)}</div>
-      </section>
+        </section>
+      </div>
     </div>`;
 
   const balance = $('#balance', root);
-  $$('[data-preset]', root).forEach((b) => b.addEventListener('click', () => { balance.value = b.dataset.preset; setError(null); }));
+  let savedTimer = null;
+
+  // Preferences apply instantly.
+  root.addEventListener('change', (e) => {
+    const name = e.target.name || '';
+    if (!name.startsWith('pref-')) return;
+    setPref(name.slice(5), e.target.type === 'checkbox' ? e.target.checked : e.target.value);
+    const saved = $('#prefs-saved', root);
+    saved.textContent = 'Saved ✓';
+    clearTimeout(savedTimer);
+    savedTimer = setTimeout(() => { saved.textContent = 'Saved on this device'; }, 1800);
+  });
+
+  // Section navigation, highlighting the section in view.
+  const navLinks = $$('[data-section]', root);
+  let holdUntil = 0;
+  const setCurrent = (id) => navLinks.forEach((l) => (l.dataset.section === id ? l.setAttribute('aria-current', 'true') : l.removeAttribute('aria-current')));
+  const jump = (id) => {
+    const sec = $(`#sec-${id}`, root);
+    if (!sec || sec.hidden) return;
+    sec.scrollIntoView({ behavior: motionOk() ? 'smooth' : 'auto', block: 'start' });
+    const heading = $('h2', sec);
+    heading.setAttribute('tabindex', '-1');
+    heading.focus({ preventScroll: true });
+    setCurrent(id);
+    holdUntil = Date.now() + 900; // keep the clicked item highlighted while smooth-scrolling
+  };
+  navLinks.forEach((l) => l.addEventListener('click', (e) => { e.preventDefault(); jump(l.dataset.section); }));
+  const observer = new IntersectionObserver((entries) => {
+    if (Date.now() < holdUntil) return;
+    const visible = entries.filter((en) => en.isIntersecting).sort((x, y) => x.boundingClientRect.top - y.boundingClientRect.top)[0];
+    if (visible) setCurrent(visible.target.id.replace('sec-', ''));
+  }, { rootMargin: '-120px 0px -55% 0px' });
+  $$('.settings-card', root).forEach((s) => observer.observe(s));
+  setCurrent('account');
+
+  const syncPresets = () => $$('[data-preset]', root).forEach((x) => x.setAttribute('aria-pressed', String(Number(x.dataset.preset) === Number(balance.value))));
+  $$('[data-preset]', root).forEach((b) => b.addEventListener('click', () => { balance.value = b.dataset.preset; setError(null); syncPresets(); }));
+  balance.addEventListener('input', syncPresets);
 
   function setError(msg) {
     balance.setAttribute('aria-invalid', msg ? 'true' : 'false');
@@ -1403,32 +1557,110 @@ function SettingsView(root) {
     showLogin();
   });
 
-  async function refresh() {
+  async function downloadBackup(btn) {
+    btn.disabled = true;
     try {
-      const [acct, status] = await Promise.all([api('/api/account'), api('/api/status')]);
-      $('#signout-card', root).hidden = !status.auth_enabled;
-      if (!balance.value) balance.value = (acct.starting_balance_cents / 100).toFixed(2).replace(/\.00$/, '');
-      $('#account-meta', root).textContent = `Current starting balance ${money(acct.starting_balance_cents)} · last reset ${fmtDateTime(acct.reset_at)}`;
-      const rl = status.rate_limit;
-      $('#data-info', root).innerHTML = status.mode === 'demo' ? `
-        <p><span class="badge demo">Demo</span> Prices are <strong>simulated</strong> and are not real market data. Demo mode covers
-          ${status.demo_symbols.length} popular tickers: ${esc(status.demo_symbols.join(', '))}.</p>
-        <p>To use real quotes, get a free API key at <a href="https://twelvedata.com/pricing" target="_blank" rel="noopener noreferrer">twelvedata.com</a>,
-          put <code>TWELVE_DATA_API_KEY=your_key</code> in <code>.env</code> and restart the server.</p>`
-        : `
-        <p><span class="badge ${esc(status.label)}">${status.label === 'live' ? 'Live' : 'Delayed'}</span> Quotes from <strong>${esc(status.provider)}</strong>,
-          cached on the server for ${status.quote_refresh_seconds} seconds. Your API key stays on the server.</p>
-        <p>Free-plan budget: <strong>${rl.used_last_minute}/${rl.per_minute}</strong> requests this minute,
-          <strong>${intFmt.format(rl.used_today)}/${intFmt.format(rl.per_day)}</strong> today. When the budget runs out, cached prices are shown and labelled <span class="badge delayed">Delayed</span>.</p>
-        ${status.last_error ? `<div class="alert warn flush">Last provider error: ${esc(status.last_error)}</div>` : ''}`;
+      const [account, t, o, w] = await Promise.all([api('/api/account'), api('/api/transactions'), api('/api/orders'), api('/api/watchlist')]);
+      const backup = {
+        app: 'PaperTrade',
+        note: 'Simulated account backup. No real money.',
+        exported_at: new Date().toISOString(),
+        account: {
+          starting_balance_cents: account.starting_balance_cents,
+          cash_cents: account.cash_cents,
+          reset_at: account.reset_at,
+          holdings: account.holdings.map(({ symbol, name, shares, avg_cost }) => ({ symbol, name, shares, avg_cost })),
+        },
+        transactions: t.transactions,
+        orders: o.orders,
+        watchlist: w.items.map((i) => i.symbol),
+      };
+      const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }));
+      const link = Object.assign(document.createElement('a'), { href: url, download: `papertrade-backup-${new Date().toISOString().slice(0, 10)}.json` });
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast('Backup downloaded.');
     } catch (err) {
-      $('#data-info', root).innerHTML = errorHtml(err.message);
-      bindRetry(root, refresh);
+      toast(err.message, { error: true });
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  let first = true;
+  async function refresh() {
+    let acct;
+    let status;
+    try {
+      [acct, status] = await Promise.all([api('/api/account'), api('/api/status')]);
+    } catch (err) {
+      $('#account-rows', root).innerHTML = errorHtml(err.message);
+      bindRetry($('#account-rows', root), refresh);
+      return;
+    }
+    if (first && !balance.value) {
+      balance.value = (acct.starting_balance_cents / 100).toFixed(2).replace(/\.00$/, '');
+      syncPresets();
+    }
+
+    $('#account-rows', root).innerHTML = [
+      settingRow('Account value', `Cash plus holdings at current prices. You started with ${money(acct.starting_balance_cents)}.`,
+        `<span class="setting-value">${money(acct.portfolio_value_cents)}</span><span class="${tone(acct.total_pl_cents)} setting-sub">${signedMoney(acct.total_pl_cents)} (${pct(acct.total_pl_percent)})</span>`),
+      settingRow('Cash', acct.reserved_cash_cents ? `${money(acct.reserved_cash_cents)} is reserved for open limit orders.` : 'Available to trade right now.',
+        `<span class="setting-value">${money(acct.available_cash_cents)}</span>`),
+      settingRow('Account started', 'When this account was created or last reset.', `<span class="setting-value sm">${esc(fmtDateTime(acct.reset_at))}</span>`),
+      settingRow('Back up your data', 'Download your holdings, trades, orders and watchlist as a JSON file.',
+        '<button type="button" class="btn" data-backup>Download backup</button>'),
+    ].join('');
+    $('[data-backup]', root).addEventListener('click', (e) => downloadBackup(e.currentTarget));
+
+    const demo = status.mode === 'demo';
+    const rl = status.rate_limit;
+    const label = demo ? 'Demo' : status.label === 'live' ? 'Live' : 'Delayed';
+    $('#data-badge', root).innerHTML = `<span class="badge ${demo ? 'demo' : esc(status.label)}">${label}</span>`;
+    const meter = (used, max, what) => `
+      <div class="meter-row"><div class="meter" aria-hidden="true"><span data-width="${(used / max * 100).toFixed(1)}"></span></div>
+        <span class="mono-sm">${intFmt.format(used)} / ${intFmt.format(max)} ${what}</span></div>`;
+    $('#data-rows', root).innerHTML = [
+      settingRow('Source', demo ? 'Fictional prices generated on the server, so the app works without an API key.'
+        : 'Quotes, charts and search come from Twelve Data. Your API key stays on the server.',
+      `<span class="setting-value sm">${esc(status.provider)}</span>`),
+      settingRow('Refresh', 'How often prices update while the app is open.', `<span class="setting-value sm">Every ${status.quote_refresh_seconds} s</span>`),
+      demo
+        ? settingRow('Coverage', `${status.demo_symbols.length} popular US tickers are available in demo mode.`,
+          `<div class="chips">${status.demo_symbols.map((s) => `<a class="chip-link" href="#/stock/${encodeURIComponent(s)}">${esc(s)}</a>`).join('')}</div>`)
+        : settingRow('Free-plan budget', 'When the budget runs out, cached prices are shown and marked Delayed.',
+          `<div class="meters">${meter(rl.used_last_minute, rl.per_minute, 'this minute')}${meter(rl.used_today, rl.per_day, 'today')}</div>`),
+      demo ? `<div class="setting-row setting-row-wide">
+          <div class="setting-text"><h3>Use real prices</h3><p>Real quotes are free for personal use.</p></div>
+          <ol class="steps">
+            <li>Get a free API key at <a href="https://twelvedata.com/pricing" target="_blank" rel="noopener noreferrer">twelvedata.com</a>.</li>
+            <li>Add <code>TWELVE_DATA_API_KEY=your_key</code> to <code>.env</code>, or use <code>fly secrets set</code> when deployed.</li>
+            <li>Restart the server. The badge switches to <span class="badge live">Live</span>.</li>
+          </ol>
+        </div>` : '',
+      status.last_error ? `<div class="alert warn">Last provider error: ${esc(status.last_error)}</div>` : '',
+    ].join('');
+    applyWidths($('#data-rows', root));
+    $('#row-banner', root).hidden = !demo;
+
+    $('#sec-session', root).hidden = !status.auth_enabled;
+    $('[data-section="session"]', root).hidden = !status.auth_enabled;
+
+    if (first) {
+      first = false;
+      const target = sessionStorage.getItem('pt-jump');
+      if (target) {
+        sessionStorage.removeItem('pt-jump');
+        requestAnimationFrame(() => jump(target));
+      }
     }
   }
 
   refresh();
-  return { refresh: () => {}, title: 'Settings' };
+  return { refresh, title: 'Settings', destroy: () => observer.disconnect() };
 }
 
 function showLogin() {
@@ -1507,6 +1739,9 @@ function route() {
   }
   if (def?.params && !/^[A-Z][A-Z0-9.\-]{0,9}$/.test(def.params(match).symbol)) def = null;
   app.view = def ? def.view(main, def.params ? def.params(match) : {}) : NotFoundView(main);
+  main.classList.remove('enter');
+  void main.offsetWidth;
+  main.classList.add('enter');
   document.title = `${app.view.title} · PaperTrade`;
   $$('[data-nav]').forEach((a) => {
     if (def?.nav && a.dataset.nav === def.nav) a.setAttribute('aria-current', 'page');
@@ -1520,7 +1755,12 @@ function route() {
 }
 
 window.addEventListener('hashchange', route);
+document.addEventListener('click', (e) => {
+  const link = e.target.closest('[data-jump-to]');
+  if (link) sessionStorage.setItem('pt-jump', link.dataset.jumpTo);
+});
 initSearch();
+applyPrefs();
 
 (async function boot() {
   try {
