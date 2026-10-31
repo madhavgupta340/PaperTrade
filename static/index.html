@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>PaperTrade · Simulated stock trading</title>
+  <meta name="description" content="Practice trading stocks with simulated money.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#f4f3ee" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d0d0b" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="PaperTrade">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@200..600&family=Geist+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#/" aria-label="PaperTrade home">
+        <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true" focusable="false">
+          <rect x="0" y="12" width="6" height="10" fill="currentColor"/>
+          <rect x="8" y="6" width="6" height="16" fill="currentColor"/>
+          <rect x="16" y="0" width="6" height="22" fill="currentColor" opacity=".35"/>
+        </svg>
+        <span>PaperTrade</span>
+      </a>
+      <span class="sim-pill" title="All money in this app is simulated. No real orders are placed.">Simulated money</span>
+
+      <div class="search" role="search">
+        <label for="search-input" class="visually-hidden">Search stocks by ticker or company</label>
+        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input id="search-input" type="search" placeholder="Search ticker or company" autocomplete="off" spellcheck="false"
+               role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-results">
+        <kbd class="search-kbd" aria-hidden="true">/</kbd>
+        <div id="search-panel" class="search-panel" hidden>
+          <ul id="search-results" role="listbox" aria-label="Search results"></ul>
+          <p id="search-message" class="search-message" hidden></p>
+        </div>
+        <p id="search-live" class="visually-hidden" aria-live="polite"></p>
+      </div>
+
+      <nav class="nav" aria-label="Primary">
+        <a href="#/" data-nav="dashboard">Dashboard</a>
+        <a href="#/history" data-nav="history">History</a>
+        <a href="#/settings" data-nav="settings">Settings</a>
+      </nav>
+
+      <div id="data-status" class="data-status" aria-live="off">
+        <span class="dot" aria-hidden="true"></span><span class="data-status-text">Connecting…</span>
+      </div>
+    </div>
+  </header>
+
+  <div id="mode-banner" class="mode-banner" role="note" hidden></div>
+
+  <main id="main" class="main" tabindex="-1"></main>
+
+  <footer class="footer">
+    <p><strong>Paper trading only.</strong> All balances, orders and trades are simulated. This app never connects to a
+      brokerage or places real orders, and nothing here is investment advice.</p>
+    <p id="footer-provider" class="muted"></p>
+  </footer>
+
+  <div id="toasts" class="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
+
+  <dialog id="order-dialog" class="dialog" aria-labelledby="order-dialog-title"></dialog>
+  <dialog id="confirm-dialog" class="dialog" aria-labelledby="confirm-dialog-title"></dialog>
+</body>
+</html>

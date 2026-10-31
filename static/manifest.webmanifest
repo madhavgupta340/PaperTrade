@@ -1,0 +1,10 @@
+{
+  "name": "PaperTrade",
+  "short_name": "PaperTrade",
+  "description": "Practice stock trading with simulated money.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f3ee",
+  "theme_color": "#f4f3ee",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
