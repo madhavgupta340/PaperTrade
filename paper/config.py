@@ -42,6 +42,8 @@ class Config:
     default_starting_balance: Decimal
     app_password: str
     session_secret: str  # optional; a random one is stored in the database if empty
+    database_url: str  # Postgres connection string; empty = local SQLite file
+    serverless: bool  # running on Vercel: no background worker, no local disk
 
     @property
     def use_demo(self) -> bool:
@@ -90,6 +92,13 @@ def load_config() -> Config:
 
     host = os.environ.get("HOST", "").strip() or "127.0.0.1"
     password = os.environ.get("APP_PASSWORD", "")
+    serverless = bool(os.environ.get("VERCEL"))
+    database_url = (os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL") or "").strip()
+    if serverless and not password:
+        raise SystemExit("Config error: set APP_PASSWORD (12+ characters) in the Vercel project's environment variables.")
+    if serverless and not database_url:
+        raise SystemExit("Config error: Vercel has no persistent disk. Connect a Postgres database "
+                         "(Vercel Storage / Neon) so DATABASE_URL is set.")
     if host not in ("127.0.0.1", "localhost", "::1") and not password:
         raise SystemExit(
             "Config error: HOST is set to accept outside connections, so APP_PASSWORD is required. "
@@ -110,4 +119,6 @@ def load_config() -> Config:
         default_starting_balance=balance.quantize(Decimal("0.01")),
         app_password=password,
         session_secret=os.environ.get("SESSION_SECRET", "").strip(),
+        database_url=database_url,
+        serverless=serverless,
     )

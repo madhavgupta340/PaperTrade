@@ -36,7 +36,30 @@ Run the tests:
 python3 -m unittest discover -s tests
 ```
 
-## Use it from your phone (deploy)
+## Host it on Vercel (free, works from your phone)
+
+Vercel runs the app as a serverless function, connected to your GitHub repo, with a free Postgres database for your account.
+- Nothing runs between visits.
+- Limit orders that should have filled meanwhile are settled from price history the next time you open the app.
+- Every `git push` redeploys automatically.
+
+1. Sign in at <https://vercel.com> with GitHub. The free **Hobby** plan is enough.
+2. **Add New → Project**, import `papertrade`, and keep the detected settings. Don't deploy yet, or let the first deploy fail; that's fine.
+3. **Storage → Create Database → Neon (Postgres)**, then connect it to the project. This sets `DATABASE_URL` for you.
+4. **Settings → Environment Variables**, then add:
+   - `APP_PASSWORD`: a long password (12+ characters). It's what protects the app on the internet.
+   - `TWELVE_DATA_API_KEY` (optional): leave it out to stay in demo mode.
+5. **Deployments → Redeploy**. Open the `*.vercel.app` URL on your phone, sign in, and use **Add to Home Screen**.
+
+If something is missing, the site shows a plain "not configured yet" message naming the missing setting.
+Locally nothing changes: `python3 server.py` still uses a SQLite file and needs no installs.
+To run against Postgres locally, `pip install -r requirements.txt` and set `DATABASE_URL`.
+
+**Vercel notes**
+- Price caches live in memory per function instance. On a cold start the first page load fetches fresh quotes, which uses a few extra API credits.
+- The free-tier request budget is also tracked per instance. If several instances run at once, Twelve Data's own rate limit applies, and the app shows cached prices marked **Delayed**.
+
+## Alternative: Fly.io (always-on container)
 
 The app doesn't need to run all the time. Positions are valued at current prices whenever you open it.
 Limit orders that should have filled while it was off are settled from price history when it wakes:
@@ -125,15 +148,17 @@ With no key set, the app runs in **demo mode**. A banner and "Demo" badges make 
 ## Project layout
 
 ```
-server.py            HTTP server: JSON API, static files, background limit-order worker
+server.py            WSGI app (JSON API + static files); local server with background limit-order worker
 paper/config.py      Environment / .env configuration
-paper/db.py          SQLite schema and transactions (data/paper_trading.db)
+paper/db.py          SQLite (local file) or Postgres (DATABASE_URL) storage
 paper/engine.py      Order validation, fills, reservations, catch-up settling, P/L accounting
 paper/auth.py        Password sign-in and signed session cookies
 paper/market.py      Twelve Data adapter, rate limiter, caching facade
 paper/demo.py        Deterministic simulated market for demo mode
 static/              index.html, styles.css, app.js (no build step, no CDN)
 tests/               unittest suites (engine, catch-up, auth, demo market, Twelve Data adapter)
+vercel.json          Vercel function config (entrypoint: `app` in server.py)
+requirements.txt     psycopg, only needed with DATABASE_URL (Postgres)
 Dockerfile, fly.toml Container and Fly.io deployment (scale to zero + volume)
 ```
 

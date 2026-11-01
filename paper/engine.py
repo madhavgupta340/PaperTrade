@@ -304,11 +304,11 @@ class Engine:
             reserved = ev["total_cents"] if order["side"] == "buy" and not ev["fills_now"] else 0
             cur = c.execute(
                 "INSERT INTO orders (symbol, name, side, order_type, quantity, limit_price, status, "
-                "reserved_cents, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)",
+                "reserved_cents, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?) RETURNING id",
                 (order["symbol"], quote.get("name"), order["side"], order["type"], order["quantity"],
                  float(order["limit_price"]) if order["limit_price"] else None, reserved, now, now),
             )
-            order_id = cur.lastrowid
+            order_id = cur.fetchone()["id"]
             txn = self._fill(c, order_id, ev["price"], quote) if ev["fills_now"] else None
             saved = _row(c.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone())
         return {"order": saved, "transaction": txn, "filled": txn is not None}
@@ -348,13 +348,14 @@ class Engine:
         cur = c.execute(
             "INSERT INTO transactions (order_id, symbol, name, side, quantity, price, amount_cents, "
             "realized_pl_cents, cash_after_cents, data_source, note, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
             (order_id, symbol, o["name"], o["side"], qty, float(price), amount, realized, cash,
              quote.get("source"), note, now),
         )
         c.execute("UPDATE orders SET status = 'filled', fill_price = ?, reserved_cents = 0, updated_at = ? "
                   "WHERE id = ?", (float(price), now, order_id))
-        return _row(c.execute("SELECT * FROM transactions WHERE id = ?", (cur.lastrowid,)).fetchone())
+        txn_id = cur.fetchone()["id"]
+        return _row(c.execute("SELECT * FROM transactions WHERE id = ?", (txn_id,)).fetchone())
 
     def process_open_orders(self) -> list:
         """Fill resting limit orders whose price has been reached.
@@ -471,7 +472,7 @@ class Engine:
             today = [dict(r) for r in c.execute("SELECT * FROM transactions WHERE created_at >= ?", (day_start,))]
             recent = [dict(r) for r in c.execute("SELECT * FROM transactions ORDER BY id DESC LIMIT 5")]
             realized_total = c.execute(
-                "SELECT COALESCE(SUM(realized_pl_cents), 0) AS s FROM transactions").fetchone()["s"]
+                "SELECT CAST(COALESCE(SUM(realized_pl_cents), 0) AS BIGINT) AS s FROM transactions").fetchone()["s"]
 
         flows = _day_flows(today)
 
@@ -624,7 +625,7 @@ class Engine:
             if exc.status == 404:
                 raise TradingError(exc.message, 404, field="symbol")
         with self.db.tx() as c:
-            c.execute("INSERT OR IGNORE INTO watchlist (symbol, name, added_at) VALUES (?, ?, ?)",
+            c.execute("INSERT INTO watchlist (symbol, name, added_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
                       (symbol, name, iso_utc()))
         return {"symbol": symbol, "name": name, "watched": True}
 
