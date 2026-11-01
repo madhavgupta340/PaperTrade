@@ -162,6 +162,7 @@ paper/auth.py        Password sign-in and signed session cookies
 paper/market.py      Twelve Data adapter, rate limiter, caching facade
 paper/demo.py        Deterministic simulated market for demo mode
 static/              index.html, styles.css, app.js (no build step, no CDN)
+scripts/make_icons.py Regenerates favicon + home-screen icons (static/icons/)
 tests/               unittest suites (engine, catch-up, auth, demo market, Twelve Data adapter)
 vercel.json          Vercel function config (entrypoint: `app` in server.py)
 requirements.txt     psycopg, only needed with DATABASE_URL (Postgres)
