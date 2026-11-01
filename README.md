@@ -2,6 +2,9 @@
 
 A paper-trading app for practising stock trades with **simulated money** and live or demo market data.
 
+**Live:** [papertrade-viue.vercel.app](https://papertrade-viue.vercel.app). This is my personal instance, so it's password-protected and you'll only see the sign-in page.
+To try it yourself, run it locally (no setup, demo prices) or deploy your own copy (see [Host it on Vercel](#host-it-on-vercel-free-works-from-your-phone)).
+
 > **Simulated money only.** PaperTrade never connects to a brokerage and never places real orders.
 > Nothing in it is investment advice.
 
