@@ -589,11 +589,21 @@ svg.down .hatch-line { stroke: var(--neg); }
 }
 
 /* ---------- Sign in & away summary ---------- */
-body.signed-out .search, body.signed-out .nav, body.signed-out .data-status, body.signed-out #mode-banner { visibility: hidden; }
-.login { max-width: 420px; margin: 8vh auto 0; display: grid; gap: 14px; }
+/* Signed out: header shows only the brand, and the form sits in a centered card. */
+body.signed-out .search, body.signed-out .nav, body.signed-out .data-status, body.signed-out #mode-banner { display: none !important; }
+body.signed-out .topbar-inner { grid-template-columns: auto 1fr; grid-template-areas: "brand pill"; }
+body.signed-out .main { display: flex; align-items: center; justify-content: center; padding-top: 32px; padding-bottom: 32px; }
+.login {
+  width: 100%; max-width: 400px; margin: 0 auto; display: grid; gap: 10px;
+  padding: 30px 28px 26px; border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  animation: page-in .38s cubic-bezier(.2, .8, .25, 1) both;
+}
 .login .eyebrow { color: var(--muted); margin: 0; }
-.login-form { margin-top: 18px; display: grid; gap: 12px; }
-.login-form .help { margin-top: 4px; }
+.login .page-title { font-size: clamp(40px, 11vw, 56px); }
+.login-form { margin-top: 16px; display: grid; gap: 14px; }
+.login-form .field { margin-bottom: 0; }
+.login-form .help { margin-top: 2px; line-height: 1.5; }
 .away { margin: 8px 0 6px; border-color: var(--text); animation: print .5s cubic-bezier(.2, .9, .25, 1) both; }
 .away-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 12px 0 18px; }
 .away-head h2 { color: var(--muted); }
@@ -763,6 +773,11 @@ body.signed-out .search, body.signed-out .nav, body.signed-out .data-status, bod
 }
 @media (max-width: 440px) {
   .status-time { display: none; }
+}
+@media (max-width: 640px) {
+  .input, select.input, .search input { font-size: 16px; }  /* below 16px, iOS Safari zooms in on focus */
+  body.signed-out .main { padding: 24px 16px 40px; }
+  .login { padding: 24px 20px 20px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition: none !important; scroll-behavior: auto !important; }
