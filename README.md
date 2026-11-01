@@ -47,7 +47,7 @@ Vercel runs the app as a serverless function, connected to your GitHub repo, wit
 - Every `git push` redeploys automatically.
 
 1. Sign in at <https://vercel.com> with GitHub. The free **Hobby** plan is enough.
-2. **Add New → Project**, import `papertrade`, and keep the detected settings. Don't deploy yet, or let the first deploy fail; that's fine.
+2. **Add New → Project**, import `PaperTrade`, and keep the detected settings. Don't deploy yet, or let the first deploy fail; that's fine.
 3. **Storage → Create Database → Neon (Postgres)**, then connect it to the project. This sets `DATABASE_URL` for you.
 4. **Settings → Environment Variables**, then add:
    - `APP_PASSWORD`: a long password (12+ characters). It's what protects the app on the internet.
