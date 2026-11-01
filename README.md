@@ -56,6 +56,9 @@ Locally nothing changes: `python3 server.py` still uses a SQLite file and needs 
 To run against Postgres locally, `pip install -r requirements.txt` and set `DATABASE_URL`.
 
 **Vercel notes**
+- On the free Hobby plan, Vercel only deploys commits whose author email belongs to your GitHub account. Other commits show as "Blocked".
+  Use your GitHub noreply address for this repo:
+  `git config user.email "<id>+<username>@users.noreply.github.com"` (find it under GitHub → Settings → Emails).
 - Price caches live in memory per function instance. On a cold start the first page load fetches fresh quotes, which uses a few extra API credits.
 - The free-tier request budget is also tracked per instance. If several instances run at once, Twelve Data's own rate limit applies, and the app shows cached prices marked **Delayed**.
 
